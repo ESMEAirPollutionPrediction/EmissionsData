@@ -1,5 +1,7 @@
 import requests
 import logging
+import datetime
+import csv
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,33 +16,49 @@ def get_file(url: str, file: str) -> bool:
     return r.ok
 
 
-def get_gouv_data(
-        day: str = "01", 
-        month: str = "01", 
-        year: str = "2023", 
-        save_folder_path: str = "./data/raw", 
-        base_url: str = "https://files.data.gouv.fr/lcsqa/concentrations-de-polluants-atmospheriques-reglementes/temps-reel", 
-        file_prefix: str = "FR_E2"
+def get_gouv_data_and_metadata(
+        save_folder_path: str = "./data/raw",
+        base_url: str = "https://files.data.gouv.fr/lcsqa/concentrations-de-polluants-atmospheriques-reglementes/temps-reel",
+        file_prefix: str = "FR_E2",
+        metadata_url: str = "https://www.data.gouv.fr/fr/datasets/donnees-temps-reel-de-mesure-des-concentrations-de-polluants-atmospheriques-reglementes-1/#/resources/eb87c56c-dea9-4377-a1e7-03ada59d3043"
 ) -> bool:
-    file_name = f"{file_prefix}_{year}-{month}-{day}.csv"
-    full_url = f"{base_url}/{year}/{file_name}"
-    full_save_path = f"{save_folder_path}/{file_name}"
-    response_status = get_file(full_url, full_save_path)
-    return response_status
-    
+    today = datetime.date.today()
+    start_date = datetime.date(2021, 1, 1)
+    current_date = start_date
 
-def get_gouv_metadata(
-        url: str = "https://www.data.gouv.fr/fr/datasets/donnees-temps-reel-de-mesure-des-concentrations-de-polluants-atmospheriques-reglementes-1/#/resources/eb87c56c-dea9-4377-a1e7-03ada59d3043",
-        save_folder_path: str = "./data/raw"
-) -> bool:
-    """
-    TO-DO: get stable link, current one might be linked to the current update at 15/11/2023 
-    """
-    full_save_path = f"{save_folder_path}/ineris_metadata.xls"
-    response_status = get_file(url, full_save_path)
-    return response_status
+    metadata_file_name = "metadata.xls"
+    metadata_full_url = metadata_url
+    metadata_full_save_path = f"{save_folder_path}/{metadata_file_name}"
+    metadata_response_status = get_file(metadata_full_url, metadata_full_save_path)
+    if not metadata_response_status:
+        return False
 
+    data_file_name = "data.csv"
+    data_full_save_path = f"{save_folder_path}/{data_file_name}"
+    with open(data_full_save_path, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Date", "Pollutant", "Value"])
 
-if __name__ == "__main__":
-    # get_gouv_data()
-    get_gouv_metadata()
+        while current_date <= today:
+            day = str(current_date.day).zfill(2)
+            month = str(current_date.month).zfill(2)
+            year = str(current_date.year)
+            file_name = f"{file_prefix}_{year}-{month}-{day}.csv"
+            full_url = f"{base_url}/{year}/{file_name}"
+            full_save_path = f"{save_folder_path}/{file_name}"
+            response_status = get_file(full_url, full_save_path)
+            if not response_status:
+                return False
+
+            # Read data from the downloaded file and write it to the combined CSV file
+            with open(full_save_path, 'r') as datafile:
+                reader = csv.reader(datafile)
+                next(reader)  # Skip the header row
+                for row in reader:
+                    writer.writerow([f"{year}-{month}-{day}", row[0], row[1]])
+
+            current_date += datetime.timedelta(days=1)
+
+    return True
+
+get_gouv_data_and_metadata()
